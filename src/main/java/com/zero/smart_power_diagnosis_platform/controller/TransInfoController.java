@@ -5,6 +5,7 @@ import com.zero.common.error.BusinessException;
 import com.zero.common.error.EmBusinessError;
 import com.zero.common.response.CommonReturnType;
 import com.zero.common.util.MailUtils;
+import com.zero.smart_power_diagnosis_platform.controller.VO.SiteDetailVO;
 import com.zero.smart_power_diagnosis_platform.controller.VO.TransVO;
 import com.zero.smart_power_diagnosis_platform.entity.EleSite;
 import com.zero.smart_power_diagnosis_platform.entity.TransInfo;
@@ -67,6 +68,28 @@ public class TransInfoController extends BaseController {
     }
 
     /**
+     * 获取一个站点所有变压器的最近一次信息
+     * @param siteId
+     * @return
+     * @throws BusinessException
+     * @throws InvocationTargetException
+     * @throws IllegalAccessException
+     */
+    @GetMapping("/getlastinfo/{siteid}")
+    public CommonReturnType getLastInfo(@PathVariable(value = "siteid")Integer siteId) throws BusinessException, InvocationTargetException, IllegalAccessException {
+        List<Integer> transIds = eleSiteService.getTransIdBysiteId(siteId);
+        if(transIds == null || transIds.isEmpty()) {
+            throw new BusinessException(EmBusinessError.UNKNOWN_ERROR, "该站点设备");
+        }
+        List<TransInfo> collect = transIds.stream().map(transId -> {
+            TransInfo transInfo = transInfoService.getLastInfo(siteId, transId);
+            return transInfo;
+        }).collect(Collectors.toList());
+        List<SiteDetailVO> siteDetailVOS = transInfoService.convertListFromTranInfoToDetailVO(collect);
+        return CommonReturnType.create(siteDetailVOS);
+    }
+
+    /**
      * 获取当前日期前指定天数历史信息，默认7天
      */
     @ApiOperation("获取指定天数的数据信息")
@@ -77,24 +100,12 @@ public class TransInfoController extends BaseController {
                                            @RequestParam(value = "day", required = false, defaultValue = "7") Integer day) throws BusinessException {
         List<TransInfo> allInfo = transInfoService.getAllInfo(siteid, transid, day);
         if(allInfo == null || allInfo.isEmpty()) {
-            throw  new BusinessException(EmBusinessError.UNKNOWN_ERROR,"设备不存在");
+            throw new BusinessException(EmBusinessError.UNKNOWN_ERROR,"设备不存在");
         }
-        List<TransVO> transVOS = allInfo.stream().map(info -> {
-            TransVO transVO = null;
-            try {
-                transVO = transInfoService.convertTransInfoToVO(info);
-            } catch (InvocationTargetException e) {
-                e.printStackTrace();
-            } catch (IllegalAccessException e) {
-                e.printStackTrace();
-            } catch (BusinessException e) {
-                e.printStackTrace();
-            }
-            return transVO;
-        }).collect(Collectors.toList());
-        return CommonReturnType.create(transVOS);
+        List<TransVO> transVOS = transInfoService.converFromTransInfoToTransVO(allInfo);
+        Map<String, Object> result = transInfoService.makeResult(transVOS);
+        return CommonReturnType.create(result);
     }
-
 
     /**
      * 接收一台设备的数据
@@ -128,13 +139,15 @@ public class TransInfoController extends BaseController {
         //将数据保存进数据库
         transInfoService.save(transInfo);
         //判断状态
-        if(!transInfoService.judgeStatus(transInfo)){
+        String str = transInfoService.judgeStatus(transInfo);
+        if(0 != str.length()){
             //根据siteid和transid更新状态
             UpdateWrapper<Transfrom> wrapper = new UpdateWrapper<>();
             wrapper.eq("site_id", siteId)
                     .eq("trans_id", transId)
                     .eq("status",1)
-                    .set("status", 0);
+                    .set("status", 0)
+                    .set("err_msg", str);
             transfromService.update(wrapper);
             UpdateWrapper<EleSite> updateWrapper = new UpdateWrapper<>();
             updateWrapper.eq("site_id", siteId)
@@ -142,7 +155,7 @@ public class TransInfoController extends BaseController {
                     .set("status", 0);
             eleSiteService.update(updateWrapper);
         }
-        return CommonReturnType.create("数据上传成功");
+        return CommonReturnType.success("数据上传成功");
     }
 
 }
