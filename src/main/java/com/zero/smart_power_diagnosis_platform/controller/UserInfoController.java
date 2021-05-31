@@ -1,37 +1,41 @@
 package com.zero.smart_power_diagnosis_platform.controller;
 
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
+import cn.hutool.captcha.CaptchaUtil;
+import cn.hutool.captcha.LineCaptcha;
+import cn.hutool.captcha.ShearCaptcha;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
-import com.zero.common.controller.BaseController;
-import com.zero.common.error.BusinessException;
-import com.zero.common.error.EmBusinessError;
-import com.zero.common.response.CommonReturnType;
-import com.zero.common.util.JWTUtils;
+
+
+import com.zero.smart_power_diagnosis_platform.common.controller.BaseController;
+import com.zero.smart_power_diagnosis_platform.common.error.BusinessException;
+import com.zero.smart_power_diagnosis_platform.common.error.EmBusinessError;
+import com.zero.smart_power_diagnosis_platform.common.response.CommonReturnType;
 import com.zero.smart_power_diagnosis_platform.controller.VO.UserVO;
-import com.zero.smart_power_diagnosis_platform.controller.certificate.wxKey;
 import com.zero.smart_power_diagnosis_platform.entity.UserInfo;
 import com.zero.smart_power_diagnosis_platform.mapper.UserInfoMapper;
 import com.zero.smart_power_diagnosis_platform.service.UserInfoService;
 import com.zero.smart_power_diagnosis_platform.util.JWTUtil;
 import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.beanutils.BeanUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.http.impl.client.CloseableHttpClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * <p>
@@ -52,6 +56,7 @@ public class UserInfoController extends BaseController {
     private String secret; //secret用来获取openID
     @Value("${code.sign}")
     private String SIGN;
+
     @Autowired
     private UserInfoService userInfoService;
 
@@ -60,6 +65,7 @@ public class UserInfoController extends BaseController {
 
     /**
      * 用户登录接口(页面刷新发现有token、根据前端返回的token请求登录)
+     * @return
      */
     @PostMapping("/login")
     @ApiOperation("用户登录接口")
@@ -90,43 +96,55 @@ public class UserInfoController extends BaseController {
             wrapper.isNotNull("openid");
             userInfoService.saveOrUpdate(userInfo1,wrapper);
         }
-        return CommonReturnType.create(userVO);
+        return CommonReturnType.success(userVO);
     }
+
     /**
      * 接收code,获取openid接口
      */
     @PostMapping("/code")
     @ApiOperation("根据code获取openid并得到登录token")
-    public CommonReturnType receiveCode(@RequestParam(value = "code") String code) throws IllegalAccessException, BusinessException, InvocationTargetException {
-        log.info("获取code开始=========》");
+    public CommonReturnType receiveCode(@RequestParam(value = "code") String code,
+                                       UserInfo user) throws IllegalAccessException, BusinessException, InvocationTargetException, IOException {
+        log.info("获取code开始=========》{}",code);
+        System.out.println(user);
+
         //接收到临时登录的code，向微信服务器发起请求，获取openid,session_key，unionid
-        CloseableHttpClient client = null;
         Map<String,String> map = new HashMap<>();
         map.put("appid", appid);
         map.put("code", code);
         map.put("secret", secret);
-        String cretificate = userInfoService.getOpenIdByCode(GETOPENIDURL, map);
-        log.info("这json字符串：{}",cretificate);
-        //解析这个json字符串
+        String jsonString = userInfoService.getOpenIdByCode(GETOPENIDURL, map);
         log.info("开始解析字符串=========》");
-        JSONObject object = JSONObject.parseObject(cretificate);
-        wxKey wxKey = JSON.toJavaObject(object, wxKey.class);
-        String openid = wxKey.getOpenid();
+        String openid = userInfoService.parseJson(jsonString);
         log.info("获取到openid:{}=========》",openid);
         //查询数据库中是否含有这个openID，如果有，说明已经授权，查询用户信息，返回信息以及token；没有则保存，但是其他的用户信息是空，返回用户信息以及token
         UserInfo userInfo = userInfoService.getUserInfoByOpenId(openid);
-        String token = userInfoService.getToken(userInfo, openid);
+        if(null == userInfo) {
+            log.info("不存在存在该用户，正在登陆....");
+            UserInfo info = new UserInfo();
+            BeanUtils.copyProperties(info, user);
+            info.setOpenid(openid);
+            userInfoService.save(info);
+        }else {
+            UserInfo userInfo1 = new UserInfo();
+            System.out.println("传输的用户信息：" + user);
+            BeanUtils.copyProperties(userInfo1, user);
+            userInfo1.setOpenid(openid);
+            System.out.println("userinfo"+userInfo1);
+            userInfoService.update(userInfo1,new UpdateWrapper<UserInfo>().eq("openid", openid));
+        }
+        String token = userInfoService.getToken(userInfoService.getUserInfoByOpenId(openid));
         Map<String,Object> reToken = new HashMap<>();
         reToken.put("token", token);
-        return CommonReturnType.create(reToken);
+        reToken.put("openid", openid);
+        return CommonReturnType.success(reToken);
     }
 
     /**
-     * 用户查询接口
-     */
-
-    /**
-     * 用户删除接口
+     * 用户删除
+     * @param openid
+     * @return
      */
     @DeleteMapping("/deleteuser")
     public CommonReturnType deleteUser(@RequestParam(value = "openid")String openid) {
@@ -137,9 +155,6 @@ public class UserInfoController extends BaseController {
     }
 
     /**
-     * 获取所有用户
-     */
-    /**
      * 用户查询接口
      */
     @GetMapping("select/{openid}")
@@ -148,7 +163,7 @@ public class UserInfoController extends BaseController {
         QueryWrapper<UserInfo> userInfoQueryWrapper = new QueryWrapper<>();
         userInfoQueryWrapper.lambda().eq(UserInfo::getOpenid,openid);
         UserInfo userInfo = userInfoMapper.selectOne(userInfoQueryWrapper);
-        return CommonReturnType.create(userInfo);
+        return CommonReturnType.success(userInfo);
     }
 
     /**
@@ -160,9 +175,9 @@ public class UserInfoController extends BaseController {
         userInfoQueryWrapper.eq("openid", openid);
         int delete = userInfoMapper.delete(userInfoQueryWrapper);
         if(delete == 0) {
-            return CommonReturnType.create("用户不存在");
+            return CommonReturnType.success("用户不存在");
         }
-        return CommonReturnType.create("删除成功");
+        return CommonReturnType.success("删除成功");
     }
 
     /**
@@ -179,6 +194,34 @@ public class UserInfoController extends BaseController {
     }
 
 
+    @GetMapping("/pic")
+    public void generateValidateCode(HttpServletResponse response) throws IOException{
+        System.out.println("开始获取");
+        //设置response响应
+        response.setCharacterEncoding("UTF-8");
+        response.setHeader("Pragma", "No-cache");
+        response.setHeader("Cache-Control", "no-cache");
+        response.setDateHeader("Expires", 0);
+        response.setContentType("image/jpeg");
+
+        //把图形验证码凭证放入cookie中
+        String tokenId = UUID.randomUUID().toString();
+        Cookie cookie = new Cookie("imgCodeToken",tokenId);
+        cookie.setPath("/");
+        response.addCookie(cookie);
+
+        //定义图形验证码的长和宽
+        LineCaptcha lineCaptcha = CaptchaUtil.createLineCaptcha(126, 30,4,150);
+
+        int time=60;
+
+
+        //输出浏览器
+        OutputStream out=response.getOutputStream();
+        lineCaptcha.write(out);
+        out.flush();
+        out.close();
+    }
 
 }
 

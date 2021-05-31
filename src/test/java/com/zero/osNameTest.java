@@ -1,7 +1,8 @@
 package com.zero;
 
 import com.zero.smart_power_diagnosis_platform.service.UserInfoService;
-import org.junit.jupiter.api.Test;
+
+import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import org.springframework.beans.factory.annotation.Value;

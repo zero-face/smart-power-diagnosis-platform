@@ -2,21 +2,24 @@ package com.zero.smart_power_diagnosis_platform.controller;
 
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.zero.common.controller.BaseController;
-import com.zero.common.response.CommonReturnType;
+
+import com.zero.smart_power_diagnosis_platform.common.controller.BaseController;
+import com.zero.smart_power_diagnosis_platform.common.error.BusinessException;
+import com.zero.smart_power_diagnosis_platform.common.error.EmBusinessError;
+import com.zero.smart_power_diagnosis_platform.common.response.CommonReturnType;
+import com.zero.smart_power_diagnosis_platform.controller.VO.EleSiteVO;
 import com.zero.smart_power_diagnosis_platform.entity.EleSite;
+import com.zero.smart_power_diagnosis_platform.entity.Transfrom;
 import com.zero.smart_power_diagnosis_platform.service.EleSiteService;
 import com.zero.smart_power_diagnosis_platform.service.TransInfoService;
+import com.zero.smart_power_diagnosis_platform.service.TransfromService;
 import io.swagger.annotations.Api;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -34,45 +37,39 @@ import java.util.Map;
 public class EleSiteController extends BaseController {
     @Autowired
     private EleSiteService eleSiteService;
+    @Autowired
+    private TransfromService transfromService;
 
     /**
-     * 查询所有站点的状态
+     * 首页概括页面
+     * @return
      */
     @GetMapping("/getallstatus")
     public CommonReturnType getStatus() {
-        QueryWrapper<EleSite> wrapper = new QueryWrapper<>();
-        wrapper.eq("status", 0);
-        int errCount = eleSiteService.count(wrapper);
-        Map<String, Object> map = eleSiteService.getMap(wrapper);
-        if(null == map) {
-            Map<String, Object> result = new HashMap<>();
-            errCount = 0;
-            result.put("count",errCount);
-            return CommonReturnType.create(result);
-        }
-        map.put("count", errCount);
-        return CommonReturnType.create(map);
+        int errCount = transfromService.count(new QueryWrapper<Transfrom>().eq("status", 0));
+        int errSiteCount = eleSiteService.count(new QueryWrapper<EleSite>().eq("status", 0));
+        Integer siteCount = eleSiteService.count(new QueryWrapper<EleSite>());
+        Integer transCount = transfromService.count(new QueryWrapper<Transfrom>());
+        Integer repairCount = eleSiteService.getRepairCount();
+        Map<String,Object> maps = new HashMap<>();
+        maps.put("errSiteCount", errCount);
+        maps.put("siteCount", siteCount);
+        maps.put("transCount", transCount);
+        maps.put("status",errCount == 0 ? "正常" : "异常");
+        maps.put("commonSiteCount", siteCount - errSiteCount);
+        maps.put("repairCount",repairCount);
+        return CommonReturnType.success(maps,"首页概况数据");
     }
 
-
-
-
-    /**
-     * 站点增加
-     */
-
-    /**
-     * 站点删除
-     */
-
-    /**
-     * 站点查询
-     */
-
-    /**
-     * 站点
-     */
-
+    @GetMapping("/get_all_siteinfo")
+    public CommonReturnType getAllSite() throws BusinessException {
+        List<EleSite> allSiteInfo = eleSiteService.getAllSiteInfo();
+        if(null == allSiteInfo) {
+            throw new BusinessException(EmBusinessError.UNKNOWN_ERROR,"没有获取到任何站点信息");
+        }
+        List<EleSiteVO> eleSiteVOS = eleSiteService.convertListFromEleSiteToEleVO(allSiteInfo);
+        return CommonReturnType.success(eleSiteVOS,"返回的是所有站点的信息");
+    }
 
 }
 

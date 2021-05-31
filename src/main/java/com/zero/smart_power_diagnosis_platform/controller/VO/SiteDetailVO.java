@@ -11,6 +11,7 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = false)
 public class SiteDetailVO {
+
     private Integer id;
 
     private Integer transId;
@@ -24,5 +25,7 @@ public class SiteDetailVO {
     private Double smokeConcentration;
 
     private String picture;
+
+    private String status;
 
 }

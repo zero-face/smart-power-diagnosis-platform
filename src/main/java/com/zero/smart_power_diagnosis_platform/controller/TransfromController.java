@@ -1,17 +1,20 @@
 package com.zero.smart_power_diagnosis_platform.controller;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
-import com.zero.common.controller.BaseController;
-import com.zero.common.error.BusinessException;
-import com.zero.common.error.EmBusinessError;
-import com.zero.common.response.CommonReturnType;
+
+import com.zero.smart_power_diagnosis_platform.common.controller.BaseController;
+import com.zero.smart_power_diagnosis_platform.common.error.BusinessException;
+import com.zero.smart_power_diagnosis_platform.common.error.EmBusinessError;
+import com.zero.smart_power_diagnosis_platform.common.response.CommonReturnType;
 import com.zero.smart_power_diagnosis_platform.controller.VO.TransfromVO;
+import com.zero.smart_power_diagnosis_platform.controller.VO.WarnVO;
 import com.zero.smart_power_diagnosis_platform.entity.EleSite;
 import com.zero.smart_power_diagnosis_platform.entity.Transfrom;
 import com.zero.smart_power_diagnosis_platform.service.EleSiteService;
 import com.zero.smart_power_diagnosis_platform.service.TransfromService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,6 +33,7 @@ import java.util.stream.Collectors;
  * @author zero
  * @since 2021-05-09
  */
+@Slf4j
 @Api(tags = "变压器管理")
 @RestController
 @RequestMapping("/smart_power_diagnosis_platform/transfrom")
@@ -46,21 +50,13 @@ public class TransfromController extends BaseController {
     @GetMapping("/getwarntrans")
     @ApiOperation("获取所有的异常变压器信息")
     public CommonReturnType getWarnTrans() {
+        log.info("开始获取错误列表");
         List<Transfrom> transfroms = transfromService.getTransWarn();
-        List<TransfromVO> transfromVOS = transfroms.stream().map(transfrom -> {
-            TransfromVO transfromVO = null;
-            try {
-                transfromVO = transfromService.convertTranfromToTranVO(transfrom);
-            } catch (BusinessException e) {
-                e.printStackTrace();
-            } catch (InvocationTargetException e) {
-                e.printStackTrace();
-            } catch (IllegalAccessException e) {
-                e.printStackTrace();
-            }
-            return transfromVO;
-        }).collect(Collectors.toList());
-        return CommonReturnType.create(transfromVOS);
+        final List<WarnVO> warnVOS = transfromService.convertFromTransfromToWarnsVO(transfroms);
+        if(null == warnVOS || warnVOS.isEmpty()) {
+            return CommonReturnType.success(null);
+        }
+        return CommonReturnType.success(warnVOS);
     }
 
     /**
@@ -74,19 +70,7 @@ public class TransfromController extends BaseController {
         QueryWrapper<Transfrom> wrapper = new QueryWrapper<>();
         wrapper.eq("site_id", siteId);
         List<Transfrom> list = transfromService.list(wrapper);
-        List<TransfromVO> transfromVOS = list.stream().map(transfrom -> {
-            TransfromVO transfromVO = null;
-            try {
-                transfromVO = transfromService.convertTranfromToTranVO(transfrom);
-            } catch (BusinessException e) {
-                e.printStackTrace();
-            } catch (InvocationTargetException e) {
-                e.printStackTrace();
-            } catch (IllegalAccessException e) {
-                e.printStackTrace();
-            }
-            return transfromVO;
-        }).collect(Collectors.toList());
+        List<TransfromVO> transfromVOS = transfromService.convertFromTransfromToTransVO(list);
         return CommonReturnType.create(transfromVOS);
     }
 
@@ -127,6 +111,7 @@ public class TransfromController extends BaseController {
         UpdateWrapper<Transfrom> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("site_id",  siteId)
                 .eq("trans_id", transId)
+                .set("err_msg", null)
                 .set("status", 1);
         boolean update = transfromService.update(updateWrapper);
         if(!update) {
@@ -140,7 +125,18 @@ public class TransfromController extends BaseController {
                     .set("status", 1);
             eleSiteService.update(wrapper);
         }
-        return CommonReturnType.create("修改成功");
+        //增加修复变压器
+        Boolean aBoolean = transfromService.addRepairTrans(siteId, transId);
+        if(null == aBoolean || aBoolean == false) {
+            throw new BusinessException(EmBusinessError.UNKNOWN_ERROR, "修复信息插入失败");
+        }
+        //再次返回不正常的变压器数据
+        List<Transfrom> transfroms = transfromService.getTransWarn();
+        if(null == transfroms || transfroms.isEmpty()) {
+            return CommonReturnType.success(null,"当前没有异常的变压器");
+        }
+        List<TransfromVO> transfromVOS = transfromService.convertFromTransfromToTransVO(transfroms);
+        return CommonReturnType.create(transfromVOS);
     }
 }
 

@@ -11,20 +11,23 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * @Date 2021/5/10 19:12
  * @Since 1.8
  **/
+
 @Configuration
 public class LoginWebConfig implements WebMvcConfigurer {
     @Autowired
     private JWTInterceptor jwtInterceptor;
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(jwtInterceptor)
-                .addPathPatterns("/**")
-                .excludePathPatterns("/smart_power_diagnosis_platform/user-info/login",
-                        "/smart_power_diagnosis_platform/user-info/code",
-                        "/swagger-resources/**",
-                        "/webjars/**",
-                        "/v2/**",
-                        "/swagger-ui.html",
-                        "/error");
+//        registry.addInterceptor(jwtInterceptor);
+//                .addPathPatterns("/**")
+//                .excludePathPatterns("/smart_power_diagnosis_platform/user-info/login",
+//                        "/smart_power_diagnosis_platform/user-info/code",
+//                        "/swagger-resources/**",
+//                        "/webjars/**",
+//                        "/v2/**",
+//                        "/swagger-ui.html",
+//                        "/error",
+//                        "/smart_power_diagnosis_platform/ele-site/**",
+//                        "/smart_power_diagnosis_platform/transfrom/getwarntrans");
     }
 }

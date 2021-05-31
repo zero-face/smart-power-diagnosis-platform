@@ -1,5 +1,11 @@
 server:
-  port: 8888
+  port: 9999
+#  ssl:
+#    key-store: classpath:5705202_www.zero-face.top.pfx
+#    key-store-password: Lkm57pNu
+#    keyStoreType: PKCS12
+##    keyAlias: tomcat
+#    enabled: true
 spring:
   servlet:
     multipart:

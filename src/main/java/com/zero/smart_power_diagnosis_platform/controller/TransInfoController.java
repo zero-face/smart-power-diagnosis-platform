@@ -1,10 +1,11 @@
 package com.zero.smart_power_diagnosis_platform.controller;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
-import com.zero.common.controller.BaseController;
-import com.zero.common.error.BusinessException;
-import com.zero.common.error.EmBusinessError;
-import com.zero.common.response.CommonReturnType;
-import com.zero.common.util.MailUtils;
+
+import com.zero.smart_power_diagnosis_platform.common.controller.BaseController;
+import com.zero.smart_power_diagnosis_platform.common.error.BusinessException;
+import com.zero.smart_power_diagnosis_platform.common.error.EmBusinessError;
+import com.zero.smart_power_diagnosis_platform.common.response.CommonReturnType;
+import com.zero.smart_power_diagnosis_platform.common.util.MailUtils;
 import com.zero.smart_power_diagnosis_platform.controller.VO.SiteDetailVO;
 import com.zero.smart_power_diagnosis_platform.controller.VO.TransVO;
 import com.zero.smart_power_diagnosis_platform.entity.EleSite;
@@ -17,16 +18,16 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.beanutils.BeanUtils;
+import org.apache.velocity.runtime.directive.Foreach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
 import javax.annotation.Resource;
 import javax.mail.MessagingException;
-import javax.print.DocFlavor;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -68,7 +69,7 @@ public class TransInfoController extends BaseController {
     }
 
     /**
-     * 获取一个站点所有变压器的最近一次信息
+     * 获取一个站点所有变压器的最近一次信息,用于站点详情页面展示
      * @param siteId
      * @return
      * @throws BusinessException
@@ -81,16 +82,29 @@ public class TransInfoController extends BaseController {
         if(transIds == null || transIds.isEmpty()) {
             throw new BusinessException(EmBusinessError.UNKNOWN_ERROR, "该站点设备");
         }
-        List<TransInfo> collect = transIds.stream().map(transId -> {
-            TransInfo transInfo = transInfoService.getLastInfo(siteId, transId);
-            return transInfo;
-        }).collect(Collectors.toList());
-        List<SiteDetailVO> siteDetailVOS = transInfoService.convertListFromTranInfoToDetailVO(collect);
+        List<SiteDetailVO> siteDetailVOS = new ArrayList<>();
+        for(int transId : transIds) {
+            TransInfo lastInfo = transInfoService.getLastInfo(siteId, transId);
+            if(null == lastInfo) {
+                Transfrom transfrom = transfromService.getTransBySiteAndTransId(siteId, transId);
+                final SiteDetailVO siteDetailVO = new SiteDetailVO();
+                BeanUtils.copyProperties(siteDetailVO,transfrom);
+                siteDetailVO.setStatus(transfrom.getStatus() == true ? "正常" : "异常");
+                siteDetailVOS.add(siteDetailVO);
+            } else {
+                siteDetailVOS.add(transInfoService.convertFromTranInfoToDetailVO(lastInfo));
+            }
+        }
         return CommonReturnType.create(siteDetailVOS);
     }
 
     /**
-     * 获取当前日期前指定天数历史信息，默认7天
+     * 获取指定天数的数据，默认为7天
+     * @param siteid
+     * @param transid
+     * @param day
+     * @return
+     * @throws BusinessException
      */
     @ApiOperation("获取指定天数的数据信息")
     @ApiParam(value = "day")
@@ -100,7 +114,7 @@ public class TransInfoController extends BaseController {
                                            @RequestParam(value = "day", required = false, defaultValue = "7") Integer day) throws BusinessException {
         List<TransInfo> allInfo = transInfoService.getAllInfo(siteid, transid, day);
         if(allInfo == null || allInfo.isEmpty()) {
-            throw new BusinessException(EmBusinessError.UNKNOWN_ERROR,"设备不存在");
+            throw new BusinessException(EmBusinessError.UNKNOWN_ERROR,"数据不存在");
         }
         List<TransVO> transVOS = transInfoService.converFromTransInfoToTransVO(allInfo);
         Map<String, Object> result = transInfoService.makeResult(transVOS);
@@ -109,6 +123,18 @@ public class TransInfoController extends BaseController {
 
     /**
      * 接收一台设备的数据
+     * @param siteId
+     * @param transId
+     * @param humidity
+     * @param smokeConcentration
+     * @param temperature
+     * @param file
+     * @return
+     * @throws IOException
+     * @throws BusinessException
+     * @throws IllegalAccessException
+     * @throws InvocationTargetException
+     * @throws MessagingException
      */
     @PostMapping("/getinfo/{siteid}/{transid}")
     @ApiOperation("获取一台设备的数据")
@@ -117,11 +143,11 @@ public class TransInfoController extends BaseController {
                                        Double humidity,
                                        Double smokeConcentration,
                                        Double temperature,
-                                       MultipartFile file) throws IOException, BusinessException, IllegalAccessException, InvocationTargetException, MessagingException {
+                                       MultipartFile file) throws BusinessException, IllegalAccessException, InvocationTargetException, MessagingException {
         String picUrl = null;
         if(null != file) {
             CommonReturnType returnType = transInfoService.uploadImg(file);
-            if(returnType.getStatus().equals("success")) {
+            if("success".equals(returnType.getStatus())) {
                 picUrl = ((String) returnType.getData());
             } else {
                 throw new BusinessException(EmBusinessError.UNKNOWN_ERROR,"网络异常");
