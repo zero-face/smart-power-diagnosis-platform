@@ -83,7 +83,6 @@ public class UserInfoServiceImpl extends ServiceImpl<UserInfoMapper, UserInfo> i
                 log.info(url+params);
                 response = httpclient.execute(httpGet);
                 log.info("response:{}",response);
-
                 if(200==response.getStatusLine().getStatusCode()){
                     HttpEntity entity = response.getEntity();
                     jsonString = EntityUtils.toString(entity, "utf-8");
